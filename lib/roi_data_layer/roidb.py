@@ -69,7 +69,7 @@ def rank_roidb_ratio(roidb):
       ratio_list.append(ratio)
 
     ratio_list = np.array(ratio_list)
-    ratio_index = np.argsort(ratio_list)
+    ratio_index = np.argsort(ratio_list,kind='mergesort')
     return ratio_list[ratio_index], ratio_index
 
 def filter_roidb(roidb):
@@ -96,7 +96,7 @@ def combined_roidb(imdb_names, training=True):
       print('Appending horizontally-flipped training examples...')
       imdb.append_flipped_images()
       print('done')
-
+    
     print('Preparing training data...')
 
     prepare_roidb(imdb)

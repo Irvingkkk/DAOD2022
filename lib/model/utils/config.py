@@ -57,13 +57,11 @@ __C.TRAIN.SNAPSHOT_KEPT = 3
 
 # The time interval for saving tensorflow summaries
 __C.TRAIN.SUMMARY_INTERVAL = 180
-
 # Scale to use during training (can list multiple scales)
 # The scale is the pixel size of an image's shortest side
 __C.TRAIN.SCALES = (600,)
-
 # Max pixel size of the longest side of a scaled input image
-__C.TRAIN.MAX_SIZE = 1000
+__C.TRAIN.MAX_SIZE = 1200
 
 # Trim size for input images to create minibatch
 __C.TRAIN.TRIM_HEIGHT = 600
@@ -102,6 +100,7 @@ __C.TRAIN.SNAPSHOT_ITERS = 5000
 # solver.prototxt specifies the snapshot path prefix, this adds an optional
 # infix to yield the path: <prefix>[_<infix>]_iters_XYZ.caffemodel
 __C.TRAIN.SNAPSHOT_PREFIX = 'res101_faster_rcnn'
+
 # __C.TRAIN.SNAPSHOT_INFIX = ''
 
 # Use a prefetch thread in roi_data_layer.layer
@@ -143,6 +142,7 @@ __C.TRAIN.RPN_NMS_THRESH = 0.7
 __C.TRAIN.RPN_PRE_NMS_TOP_N = 12000
 # Number of top scoring boxes to keep after applying NMS to RPN proposals
 __C.TRAIN.RPN_POST_NMS_TOP_N = 2000
+__C.TRAIN.RPN_POST_NMS_TOP_N_TARGET = 128
 # Proposal height and width both need to be greater than RPN_MIN_SIZE (at orig image scale)
 __C.TRAIN.RPN_MIN_SIZE = 8
 # Deprecated (outside weights)
@@ -239,6 +239,10 @@ __C.MOBILENET.WEIGHT_DECAY = 0.00004
 
 # Depth multiplier
 __C.MOBILENET.DEPTH_MULTIPLIER = 1.
+## Model path. Change the path based on your environment.
+__C.VGG_PATH = "data/pretrained_model/vgg16_caffe.pth"
+__C.RESNET101_PATH = "data/pretrained_model/resnet101_caffe.pth"
+__C.RESNET50_PATH = "data/pretrained_model/resnet50_caffe.pth"
 
 #
 # MISC
@@ -302,7 +306,7 @@ __C.CUDA = False
 __C.CROP_RESIZE_WITH_MAX_POOL = True
 
 import pdb
-def get_output_dir(imdb, weights_filename):
+def get_output_dir(imdb, weights_filename, suffix=""):
   """Return the directory where experimental artifacts are placed.
   If the directory does not exist, it is created.
 
@@ -313,6 +317,7 @@ def get_output_dir(imdb, weights_filename):
   if weights_filename is None:
     weights_filename = 'default'
   outdir = osp.join(outdir, weights_filename)
+  outdir = outdir + suffix
   if not os.path.exists(outdir):
     os.makedirs(outdir)
   return outdir
@@ -370,8 +375,9 @@ def _merge_a_into_b(a, b):
 def cfg_from_file(filename):
   """Load a config file and merge it into the default options."""
   import yaml
+  print("----filename:",filename)
   with open(filename, 'r') as f:
-    yaml_cfg = edict(yaml.load(f))
+    yaml_cfg = edict(yaml.load(f,Loader=yaml.FullLoader))
 
   _merge_a_into_b(yaml_cfg, __C)
 

@@ -11,13 +11,38 @@ from __future__ import division
 from __future__ import print_function
 
 __sets = {}
-from datasets.pascal_voc import pascal_voc
-from datasets.coco import coco
-from datasets.imagenet import imagenet
-from datasets.vg import vg
+# from datasets.pascal_voc import pascal_voc
+# from datasets.coco import coco
+# from datasets.imagenet import imagenet
+# from datasets.vg import vg
 
+from datasets.cityscape import cityscape
+from datasets.foggy_cityscape import foggy_cityscape
+from datasets.city_cycle_foggy import city_cycle_foggy
+from datasets.foggy_cycle_city import foggy_cycle_city
 import numpy as np
 
+# Set up cityscape_<>
+for split in ["train", "trainval", "val", "test", "train_s"]:
+    name = "cityscape_{}".format(split)
+    __sets[name] = lambda split=split: cityscape(split)
+
+# Set up foggy_cityscape_<>
+foggy_cityscape_splites = ["train", "trainval", "val", "test", "train_t", "test_t","reliable","unreliable"]
+# foggy_cityscape_splites.extend(["test{}".format(str(i)) for i in range(11)])
+for split in foggy_cityscape_splites:
+    name = "foggy_cityscape_{}".format(split)
+    __sets[name] = lambda split=split: foggy_cityscape(split)
+
+# Set up city_cycle_foggy_<>
+for split in ["train", "trainval", "val", "trainval_st","test", "train_s","reliable","unreliable"]:
+    name = "city_cycle_foggy_{}".format(split)
+    __sets[name] = lambda split=split: city_cycle_foggy(split)
+
+# Set up foggy_cycle_city_<>
+for split in ["train", "trainval", "test", "train_t"]:
+    name = "foggy_cycle_city_{}".format(split)
+    __sets[name] = lambda split=split: foggy_cycle_city(split)
 # Set up voc_<year>_<split>
 for year in ['2007', '2012']:
   for split in ['train', 'val', 'trainval', 'test']:

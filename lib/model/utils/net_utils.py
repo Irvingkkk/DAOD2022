@@ -1,13 +1,372 @@
+# coding:utf-8
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
+from torch.autograd import Variable,Function
 import numpy as np
+from torch.utils import data
 import torchvision.models as models
 from model.utils.config import cfg
+# from model.roi_crop.functions.roi_crop import RoICropFunction
 import cv2
 import pdb
 import random
+from torch.utils.data.sampler import Sampler
+from roi_data_layer.roibatchLoader import roibatchLoader,roibatchLoader_aut
+from roi_data_layer.roidb import combined_roidb
+
+
+from torch.optim import Optimizer
+
+
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+
+class IdentityOpt(object):
+    """
+    Teacher model weight is identity to student model
+    """
+    def __init__(self, params, src_params):
+        self.params = list(params)
+        self.src_params = list(src_params)
+
+        for p, src_p in zip(self.params, self.src_params):
+            p.data[:] = src_p.data[:]
+
+    def step(self):
+        for p, src_p in zip(self.params, self.src_params):
+            p.data[:] = src_p.data[:]
+
+
+class sampler(Sampler):
+    def __init__(self, train_size, batch_size, sequential=False):
+        self.num_data = train_size
+        self.num_per_batch = int(train_size / batch_size)
+        self.batch_size = batch_size
+        self.range = torch.arange(0,batch_size).view(1, batch_size).long()
+        self.leftover_flag = False
+        self.sequential = sequential
+        if train_size % batch_size:
+          self.leftover = torch.arange(self.num_per_batch*batch_size, train_size).long()
+          self.leftover_flag = True
+
+    def __iter__(self):
+        if self.sequential:
+            rand_num = torch.arange(0, self.num_per_batch, dtype=torch.long).view(-1, 1) * self.batch_size
+        else:
+            rand_num = torch.randperm(self.num_per_batch).view(-1,1) * self.batch_size
+        self.rand_num = rand_num.expand(self.num_per_batch, self.batch_size) + self.range
+
+        self.rand_num_view = self.rand_num.view(-1)
+
+        if self.leftover_flag:
+            self.rand_num_view = torch.cat((self.rand_num_view, self.leftover),0)
+
+        return iter(self.rand_num_view)
+
+    def __len__(self):
+        return self.num_data
+
+
+# def get_dataloader_GPA(imdb_name, args, sequential=False, s_train_size=None,augment=False):
+#     imdb, roidb, ratio_list, ratio_index = combined_roidb(imdb_name)
+#     train_size = len(roidb)
+
+#     print('dataset {} {:d} roidb entries'.format(imdb_name, len(roidb)))
+
+#     if sequential:
+#         sampler_batch = sampler(train_size, args.batch_size, sequential=True)
+#     else:
+#         sampler_batch = sampler(train_size, args.batch_size)
+#     dataset = roibatchLoader_aut(roidb, ratio_list, ratio_index, args.batch_size, \
+#                              imdb.num_classes, training=True,path_return=True, augment=augment)
+#     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
+#                                              sampler=sampler_batch, num_workers=args.num_workers)
+
+def get_dataloader_aut(imdb_name, args, sequential=False, s_train_size=None,augment=False, use_GPA = False, tgt_files=None):
+    imdb, roidb, ratio_list, ratio_index = combined_roidb(imdb_name)
+    train_size = len(roidb)
+
+    print('dataset {} {:d} roidb entries'.format(imdb_name, len(roidb)))
+
+    if sequential:
+        sampler_batch = sampler(train_size, args.batch_size, sequential=True)
+    else:
+        sampler_batch = sampler(train_size, args.batch_size)
+    dataset = roibatchLoader_aut(roidb, ratio_list, ratio_index, args.batch_size, \
+                             imdb.num_classes, training=True,path_return=True, augment=augment, use_GPA=use_GPA, tgt_files=tgt_files)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
+                                             sampler=sampler_batch, num_workers=args.num_workers)
+    return imdb, train_size, dataloader
+
+def get_dataloader(imdb_name, args, sequential=False, s_train_size=None, augment=False):
+    imdb, roidb, ratio_list, ratio_index = combined_roidb(imdb_name)
+    train_size = len(roidb)
+
+    print('dataset {} {:d} roidb entries'.format(imdb_name, len(roidb)))
+
+    if sequential:
+        sampler_batch = sampler(train_size, args.batch_size, sequential=True)
+    else:
+        sampler_batch = sampler(train_size, args.batch_size)
+    dataset = roibatchLoader(roidb, ratio_list, ratio_index, args.batch_size, \
+                             imdb.num_classes, training=True, augment=augment)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
+                                             sampler=sampler_batch, num_workers=args.num_workers)
+    return imdb, train_size, dataloader
+
+class EFocalLoss(nn.Module):
+    r"""
+        This criterion is a implemenation of Focal Loss, which is proposed in
+        Focal Loss for Dense Object Detection.
+
+            Loss(x, class) = - \alpha (1-softmax(x)[class])^gamma \log(softmax(x)[class])
+
+        The losses are averaged across observations for each minibatch.
+        Args:
+            alpha(1D Tensor, Variable) : the scalar factor for this criterion
+            gamma(float, double) : gamma > 0; reduces the relative loss for well-classiﬁed examples (p > .5),
+                                   putting more focus on hard, misclassiﬁed examples
+            size_average(bool): size_average(bool): By default, the losses are averaged over observations for each minibatch.
+                                However, if the field size_average is set to False, the losses are
+                                instead summed for each minibatch.
+    """
+
+    def __init__(self, class_num, alpha=None, gamma=2, size_average=True):
+        super(EFocalLoss, self).__init__()
+        if alpha is None:
+            self.alpha = Variable(torch.ones(class_num, 1) * 1.0)
+        else:
+            if isinstance(alpha, Variable):
+                self.alpha = alpha
+            else:
+                self.alpha = Variable(alpha)
+        self.gamma = gamma
+        self.class_num = class_num
+        self.size_average = size_average
+
+    def forward(self, inputs, targets):
+        N = inputs.size(0)
+        # print(N)
+        C = inputs.size(1)
+        # inputs = F.sigmoid(inputs)
+        P = F.softmax(inputs,dim=1)
+        class_mask = inputs.data.new(N, C).fill_(0)
+        class_mask = Variable(class_mask)
+        ids = targets.view(-1, 1)
+        # print(ids)
+        class_mask.scatter_(1, ids.data, 1.)
+        # print(class_mask)
+
+        if inputs.is_cuda and not self.alpha.is_cuda:
+            self.alpha = self.alpha.cuda()
+        alpha = self.alpha[ids.data.view(-1)]
+
+        probs = (P * class_mask).sum(1).view(-1, 1)
+        log_p = probs.log()
+        # print('probs size= {}'.format(probs.size()))
+        # print(probs)
+        batch_loss = -alpha * torch.exp(-self.gamma * probs) * log_p
+        # print('-----bacth_loss------')
+        # print(batch_loss)
+
+
+        if self.size_average:
+            loss = batch_loss.mean()
+        else:
+            loss = batch_loss.sum()
+        return loss
+class FocalLoss(nn.Module):
+    r"""
+        This criterion is a implemenation of Focal Loss, which is proposed in
+        Focal Loss for Dense Object Detection.
+
+            Loss(x, class) = - \alpha (1-softmax(x)[class])^gamma \log(softmax(x)[class])
+
+        The losses are averaged across observations for each minibatch.
+        Args:
+            alpha(1D Tensor, Variable) : the scalar factor for this criterion
+            gamma(float, double) : gamma > 0; reduces the relative loss for well-classiﬁed examples (p > .5),
+                                   putting more focus on hard, misclassiﬁed examples
+            size_average(bool): size_average(bool): By default, the losses are averaged over observations for each minibatch.
+                                However, if the field size_average is set to False, the losses are
+                                instead summed for each minibatch.
+    """
+
+    def __init__(self, class_num, alpha=None, gamma=2, size_average=True,sigmoid=False,reduce=True):
+        super(FocalLoss, self).__init__()
+        if alpha is None:
+            self.alpha = Variable(torch.ones(class_num, 1) * 1.0)
+        else:
+            if isinstance(alpha, Variable):
+                self.alpha = alpha
+            else:
+                self.alpha = Variable(alpha)
+        self.gamma = gamma
+        self.class_num = class_num
+        self.size_average = size_average
+        self.sigmoid = sigmoid
+        self.reduce = reduce
+    def forward(self, inputs, targets):
+        N = inputs.size(0)
+        # print(N)
+        C = inputs.size(1)
+        if self.sigmoid:
+            P = F.sigmoid(inputs)
+            #F.softmax(inputs)
+            if targets == 0:
+                probs = 1 - P#(P * class_mask).sum(1).view(-1, 1)
+                log_p = probs.log()
+                batch_loss = - (torch.pow((1 - probs), self.gamma)) * log_p
+            if targets == 1:
+                probs = P  # (P * class_mask).sum(1).view(-1, 1)
+                log_p = probs.log()
+                batch_loss = - (torch.pow((1 - probs), self.gamma)) * log_p
+        else:
+            #inputs = F.sigmoid(inputs)
+            P = F.softmax(inputs)
+
+            class_mask = inputs.data.new(N, C).fill_(0)
+            class_mask = Variable(class_mask)
+            ids = targets.view(-1, 1)
+            class_mask.scatter_(1, ids.data, 1.)
+            # print(class_mask)
+
+
+            if inputs.is_cuda and not self.alpha.is_cuda:
+                self.alpha = self.alpha.cuda()
+            alpha = self.alpha[ids.data.view(-1)]
+
+            probs = (P * class_mask).sum(1).view(-1, 1)
+
+            log_p = probs.log()
+            # print('probs size= {}'.format(probs.size()))
+            # print(probs)
+
+            batch_loss = -alpha * (torch.pow((1 - probs), self.gamma)) * log_p
+            # print('-----bacth_loss------')
+            # print(batch_loss)
+
+        if not self.reduce:
+            return batch_loss
+        if self.size_average:
+            loss = batch_loss.mean()
+        else:
+            loss = batch_loss.sum()
+        return loss
+class FocalPseudo(nn.Module):
+    r"""
+        This criterion is a implemenation of Focal Loss, which is proposed in
+        Focal Loss for Dense Object Detection.
+
+            Loss(x, class) = - \alpha (1-softmax(x)[class])^gamma \log(softmax(x)[class])
+
+        The losses are averaged across observations for each minibatch.
+        Args:
+            alpha(1D Tensor, Variable) : the scalar factor for this criterion
+            gamma(float, double) : gamma > 0; reduces the relative loss for well-classiﬁed examples (p > .5),
+                                   putting more focus on hard, misclassiﬁed examples
+            size_average(bool): size_average(bool): By default, the losses are averaged over observations for each minibatch.
+                                However, if the field size_average is set to False, the losses are
+                                instead summed for each minibatch.
+    """
+    def __init__(self, class_num, alpha=None, gamma=2, size_average=True,threshold=0.8):
+        super(FocalPseudo, self).__init__()
+        if alpha is None:
+            self.alpha = Variable(torch.ones(class_num, 1)*1.0)
+        else:
+            if isinstance(alpha, Variable):
+                self.alpha = alpha
+            else:
+                self.alpha = Variable(alpha)
+        self.gamma = gamma
+        self.class_num = class_num
+        self.size_average = size_average
+        self.threshold = threshold
+
+    def forward(self, inputs):
+        N = inputs.size(0)
+        C = inputs.size(1)
+        inputs = inputs[0,:,:]
+        #print(inputs)
+        #pdb.set_trace()
+        inputs,ind = torch.max(inputs,1)
+        ones = torch.ones(inputs.size()).cuda()
+        value = torch.where(inputs>self.threshold,inputs,ones)
+        #
+        #pdb.set_trace()
+        #ind
+        #print(value)
+        try:
+            ind = value.ne(1)
+            indexes = torch.nonzero(ind)
+            #value2 = inputs[indexes]
+            inputs = inputs[indexes]
+            log_p = inputs.log()
+            # print('probs size= {}'.format(probs.size()))
+            # print(probs)
+            if not self.gamma == 0:
+                batch_loss = - (torch.pow((1 - inputs), self.gamma)) * log_p
+            else:
+                batch_loss = - log_p
+        except:
+            #inputs = inputs#[indexes]
+            log_p = value.log()
+            # print('probs size= {}'.format(probs.size()))
+            # print(probs)
+            if not self.gamma == 0:
+                batch_loss = - (torch.pow((1 - inputs), self.gamma)) * log_p
+            else:
+                batch_loss = - log_p
+        # print('-----bacth_loss------')
+        # print(batch_loss)
+        #batch_loss = batch_loss #* weight
+        if self.size_average:
+            try:
+                loss = batch_loss.mean() #+ 0.1*balance
+            except:
+                pdb.set_trace()
+        else:
+            loss = batch_loss.sum()
+        return loss
+
+class GradReverse(torch.autograd.Function):
+    def __init__(self):
+        super(GradReverse, self).__init__()
+    @ staticmethod
+    def forward(ctx, x, lambda_):
+        ctx.save_for_backward(lambda_)
+        return x.view_as(x)
+    @ staticmethod
+    def backward(ctx, grad_output):
+        lambda_, = ctx.saved_variables
+        grad_input = grad_output.clone()
+        return - lambda_ * grad_input, None
+
+def grad_reverse(x, lambd=1.0):
+    lam = torch.tensor(lambd)
+    return GradReverse.apply(x,lam)
+
+class GradReverse_old(Function):
+    def __init__(self, lambd):
+        self.lambd = lambd
+
+    def forward(self, x):
+        return x.view_as(x)
+
+    def backward(self, grad_output):
+        #pdb.set_trace()
+        return (grad_output * -self.lambd)
+
+
+def grad_reverse_old(x, lambd=1.0):
+    return GradReverse_old(lambd)(x)
 
 def save_net(fname, net):
     import h5py
@@ -38,13 +397,19 @@ def clip_gradient(model, clip_norm):
     """Computes a gradient clipping coefficient based on gradient norm."""
     totalnorm = 0
     for p in model.parameters():
-        if p.requires_grad and p.grad is not None:
-            modulenorm = p.grad.norm()
+        if p.requires_grad:
+            if p.grad == None:
+                continue
+            modulenorm = p.grad.data.norm()
             totalnorm += modulenorm ** 2
     totalnorm = torch.sqrt(totalnorm).item()
+
     norm = (clip_norm / max(totalnorm, clip_norm))
+    #print(norm)
     for p in model.parameters():
-        if p.requires_grad and p.grad is not None:
+        if p.requires_grad:
+            if p.grad == None:
+                continue
             p.grad.mul_(norm)
 
 def vis_detections(im, class_name, dets, thresh=0.8):
@@ -53,23 +418,56 @@ def vis_detections(im, class_name, dets, thresh=0.8):
         bbox = tuple(int(np.round(x)) for x in dets[i, :4])
         score = dets[i, -1]
         if score > thresh:
-            cv2.rectangle(im, bbox[0:2], bbox[2:4], (0, 204, 0), 2)
-            cv2.putText(im, '%s: %.3f' % (class_name, score), (bbox[0], bbox[1] + 15), cv2.FONT_HERSHEY_PLAIN,
-                        1.0, (0, 0, 255), thickness=1)
+            # cv2.rectangle(im, bbox[0:2], bbox[2:4], (0, 0, 204), 2)
+            # cv2.putText(im, '%s: %.2f' % (class_name, score), (bbox[0], bbox[1] + 15), cv2.FONT_HERSHEY_PLAIN,
+            #             1.0, (255, 0, 0), thickness=1)
+            cv2.rectangle(im, bbox[0:2], bbox[2:4], (0, 0, 204), 8)
+
+            cv2.putText(im, '%s' % (class_name), (bbox[0], bbox[1] + 15), cv2.FONT_HERSHEY_PLAIN,
+                        1.0, (255, 0, 0), thickness=1)
+        # if score > thresh:
+        #     cv2.rectangle(im, bbox[0:2], bbox[2:4], (0, 204, 0), 2)
+        #     cv2.putText(im, '%s: %.3f' % (class_name, score), (bbox[0], bbox[1] + 15), cv2.FONT_HERSHEY_PLAIN,
+        #                 1.0, (0, 0, 255), thickness=1)
     return im
+
+
+def get_gt_boxes(class_idx, dets, thresh=0.8, max_num_box=20):
+    """get ground truth boxes"""
+    gt_boxes = []
+    for i in range(np.minimum(10, dets.shape[0])):
+        bbox = tuple(int(np.round(x)) for x in dets[i, :4])
+        score = dets[i, -1]
+        if score > thresh:
+            gt_boxes.append(bbox[0: 4] + class_idx)
+    gt_boxes = torch.Tensor(gt_boxes)
+    gt_boxes_padding = torch.FloatTensor(max_num_box, gt_boxes.size(1)).zero_()
+    num_boxes = min(gt_boxes.size(0), max_num_box)
+    gt_boxes_padding[:num_boxes, :] = gt_boxes[:num_boxes]
+    return gt_boxes_padding
 
 
 def adjust_learning_rate(optimizer, decay=0.1):
     """Sets the learning rate to the initial LR decayed by 0.5 every 20 epochs"""
     for param_group in optimizer.param_groups:
         param_group['lr'] = decay * param_group['lr']
+import math
+def calc_supp(iter,iter_total=80000):
+    p = float(iter) / iter_total
+    #print(math.exp(-10*p))
+    return 2 / (1 + math.exp(-10*p)) - 1
+# def adjust_learning_rate(optimizer, decay=0.1,lr_init = 0.001):
+#     """Sets the learning rate to the initial LR decayed by 0.5 every 20 epochs"""
+#     for param_group in optimizer.param_groups:
+#         param_group['lr'] = decay * lr_init#param_group['lr']
+
 
 
 def save_checkpoint(state, filename):
     torch.save(state, filename)
 
 def _smooth_l1_loss(bbox_pred, bbox_targets, bbox_inside_weights, bbox_outside_weights, sigma=1.0, dim=[1]):
-
+    
     sigma_2 = sigma ** 2
     box_diff = bbox_pred - bbox_targets
     in_box_diff = bbox_inside_weights * box_diff
@@ -85,7 +483,7 @@ def _smooth_l1_loss(bbox_pred, bbox_targets, bbox_inside_weights, bbox_outside_w
     return loss_box
 
 def _crop_pool_layer(bottom, rois, max_pool=True):
-    # code modified from
+    # code modified from 
     # https://github.com/ruotianluo/pytorch-faster-rcnn
     # implement it using stn
     # box to affine
@@ -135,7 +533,7 @@ def _crop_pool_layer(bottom, rois, max_pool=True):
       bottom = bottom.view(1, batch_size, D, H, W).contiguous().expand(roi_per_batch, batch_size, D, H, W)\
                                                                 .contiguous().view(-1, D, H, W)
       crops = F.grid_sample(bottom, grid)
-
+    
     return crops, grid
 
 def _affine_grid_gen(rois, input_size, grid_size):
@@ -192,3 +590,40 @@ def _affine_theta(rois, input_size):
       (x1 + x2 - width + 1) / (width - 1)], 1).view(-1, 2, 3)
 
     return theta
+
+def compare_grid_sample():
+    # do gradcheck
+    N = random.randint(1, 8)
+    C = 2 # random.randint(1, 8)
+    H = 5 # random.randint(1, 8)
+    W = 4 # random.randint(1, 8)
+    input = Variable(torch.randn(N, C, H, W).cuda(), requires_grad=True)
+    input_p = input.clone().data.contiguous()
+   
+    grid = Variable(torch.randn(N, H, W, 2).cuda(), requires_grad=True)
+    grid_clone = grid.clone().contiguous()
+
+    out_offcial = F.grid_sample(input, grid)    
+    grad_outputs = Variable(torch.rand(out_offcial.size()).cuda())
+    grad_outputs_clone = grad_outputs.clone().contiguous()
+    grad_inputs = torch.autograd.grad(out_offcial, (input, grid), grad_outputs.contiguous())
+    grad_input_off = grad_inputs[0]
+
+
+    crf = RoICropFunction()
+    grid_yx = torch.stack([grid_clone.data[:,:,:,1], grid_clone.data[:,:,:,0]], 3).contiguous().cuda()
+    out_stn = crf.forward(input_p, grid_yx)
+    grad_inputs = crf.backward(grad_outputs_clone.data)
+    grad_input_stn = grad_inputs[0]
+    pdb.set_trace()
+
+    delta = (grad_input_off.data - grad_input_stn).sum()
+
+def encode_onehot(labels, n_classes):
+    onehot = torch.FloatTensor(labels.size()[0], n_classes)
+    labels = labels.data
+    if labels.is_cuda:
+        onehot = onehot.cuda()
+    onehot.zero_()
+    onehot.scatter_(1, labels.view(-1, 1), 1)
+    return onehot
