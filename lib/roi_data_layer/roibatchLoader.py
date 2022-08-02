@@ -9,9 +9,9 @@ import torch.utils.data as data
 from PIL import Image
 import torch
 
-from model.utils.config import cfg
-from roi_data_layer.minibatch import get_minibatch,get_minibatch_aut
-from model.rpn.bbox_transform import bbox_transform_inv, clip_boxes
+from lib.model.utils.config import cfg
+from lib.roi_data_layer.minibatch import get_minibatch,get_minibatch_aut
+from lib.model.rpn.bbox_transform import bbox_transform_inv, clip_boxes
 
 import numpy as np
 import random
@@ -78,6 +78,7 @@ class roibatchLoader(data.Dataset):
 
         data = torch.from_numpy(blobs['data'])
         im_info = torch.from_numpy(blobs['im_info'])
+        cls_lb = torch.from_numpy(blobs["cls_lb"])
         # we need to random shuffle the bounding box.
         data_height, data_width = data.size(1), data.size(2)
         if self.training:
@@ -216,17 +217,17 @@ class roibatchLoader(data.Dataset):
                 seg_map = torch.from_numpy(np.resize(blobs['seg_map'], (data_height, data_width)))
                 return padding_data, im_info, gt_boxes_padding, num_boxes, seg_map
             elif self.path_return:
-                return padding_data, im_info, gt_boxes_padding, num_boxes, blobs['path']
+                return padding_data, im_info, gt_boxes_padding, num_boxes, blobs['path'], cls_lb
             else:
-                return padding_data, im_info, gt_boxes_padding, num_boxes, blobs['path']
+                return padding_data, im_info, gt_boxes_padding, num_boxes, blobs['path'], cls_lb
         else:
             data = data.permute(0, 3, 1, 2).contiguous().view(3, data_height, data_width)
             im_info = im_info.view(3)
 
-            gt_boxes = torch.FloatTensor([1, 1, 1, 1, 1])
+            gt_boxes = torch.FloatTensor([[1, 1, 1, 1, 1]])
             num_boxes = 0
 
-            return data, im_info, gt_boxes, num_boxes, blobs['path']
+            return data, im_info, gt_boxes, num_boxes, blobs['path'],cls_lb
 
     def __len__(self):
         return len(self._roidb)
@@ -288,6 +289,7 @@ class roibatchLoader_aut(data.Dataset):
 
         data = torch.from_numpy(blobs['data']) # len(data)=2 because it contains weak and strong aug img
         im_info = torch.from_numpy(blobs['im_info'])
+        cls_lb = torch.from_numpy(blobs["cls_lb"])
         # we need to random shuffle the bounding box.
         data_height, data_width = data.size(1), data.size(2)
         
@@ -443,17 +445,17 @@ class roibatchLoader_aut(data.Dataset):
                 seg_map = torch.from_numpy(np.resize(blobs['seg_map'], (data_height, data_width)))
                 return padding_data, im_info, gt_boxes_padding, num_boxes, seg_map
             elif self.path_return:
-                return padding_data_weak, padding_data_strong, im_info, gt_boxes_padding, num_boxes, blobs['path']
+                return padding_data_weak, padding_data_strong, im_info, gt_boxes_padding, num_boxes, blobs['path'], cls_lb
             else:
                 return padding_data_weak, padding_data_strong, im_info, gt_boxes_padding, num_boxes
         else:
             data = data.permute(0, 3, 1, 2).contiguous().view(3, data_height, data_width)
             im_info = im_info.view(3)
 
-            gt_boxes = torch.FloatTensor([1, 1, 1, 1, 1])
+            gt_boxes = torch.FloatTensor([[1, 1, 1, 1, 1]])
             num_boxes = 0
 
-            return data, im_info, gt_boxes, num_boxes, blobs['path']
+            return data, im_info, gt_boxes, num_boxes, blobs['path'], cls_lb
 
     def __len__(self):
         return len(self._roidb)

@@ -17,13 +17,13 @@ import imageio
 imsave = imageio.imsave
 from imageio import imread
 # from scipy.misc import imsave
-from model.utils.config import cfg
-from model.utils.blob import prep_im_for_blob, im_list_to_blob
+from lib.model.utils.config import cfg
+from lib.model.utils.blob import prep_im_for_blob, im_list_to_blob
 import imgaug as ia
 import imgaug.augmenters as iaa
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
 from torchvision import transforms as T
-from model.utils.augmentation_impl import GaussianBlur
+from lib.model.utils.augmentation_impl import GaussianBlur
 import cv2
 import os
 import random
@@ -54,6 +54,14 @@ def get_minibatch(roidb, num_classes, seg_return=False, augment=False, seed=2020
     blobs['img_id'] = roidb[0]['img_id']
     blobs['path'] = roidb[0]['image']
 
+    # change gt_classes to one hot
+    def gt_classes2cls_lb_onehot(array):
+        cls_lb = np.zeros((num_classes - 1,), np.float32)
+        for i in array:
+            cls_lb[i - 1] = 1
+        return cls_lb
+    blobs["cls_lb"] = gt_classes2cls_lb_onehot(roidb[0]["gt_classes"])
+
     return blobs
 
 def get_minibatch_aut(roidb, num_classes, seg_return=False, seed=2020, augment=False, use_GPA=False, tgt_files= None):
@@ -80,6 +88,14 @@ def get_minibatch_aut(roidb, num_classes, seg_return=False, seed=2020, augment=F
         blobs['seg_map'] = roidb[0]['seg_map']
     blobs['img_id'] = roidb[0]['img_id']
     blobs['path'] = roidb[0]['image']
+
+    # change gt_classes to one hot
+    def gt_classes2cls_lb_onehot(array):
+        cls_lb = np.zeros((num_classes - 1,), np.float32)
+        for i in array:
+            cls_lb[i - 1] = 1
+        return cls_lb
+    blobs["cls_lb"] = gt_classes2cls_lb_onehot(roidb[0]["gt_classes"])
 
     return blobs
 
@@ -358,13 +374,13 @@ def get_twotype_augmentor(image, bounding_boxes, seed=2020, img_name=''):
             [
                 T.ToTensor(),
                 T.RandomErasing(
-                    p=0.7, scale=(0.05, 0.2), ratio=(0.3, 3.3), value="random" #scale=(0.05, 0.2)
+                    p=0.7, scale=(0.02, 0.05), ratio=(0.3, 3.3), value="random" #p=0.7scale=(0.05, 0.2)
                 ),
                 T.RandomErasing(
-                    p=0.5, scale=(0.02, 0.2), ratio=(0.1, 6), value="random" #scale=(0.02, 0.2)
+                    p=0.5, scale=(0.01, 0.02), ratio=(0.1, 6), value="random" #p=0.5 scale=(0.02, 0.2)
                 ),
                 T.RandomErasing(
-                    p=0.3, scale=(0.02, 0.2), ratio=(0.05, 8), value="random" #scale=(0.02, 0.2)
+                    p=0.5, scale=(0.005, 0.015), ratio=(0.05, 8), value="random" #p=0.3 scale=(0.02, 0.2)
                 ),
                 T.ToPILImage(),
             ]

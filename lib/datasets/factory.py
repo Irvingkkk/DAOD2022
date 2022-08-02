@@ -16,10 +16,10 @@ __sets = {}
 # from datasets.imagenet import imagenet
 # from datasets.vg import vg
 
-from datasets.cityscape import cityscape
-from datasets.foggy_cityscape import foggy_cityscape
-from datasets.city_cycle_foggy import city_cycle_foggy
-from datasets.foggy_cycle_city import foggy_cycle_city
+from lib.datasets.cityscape import cityscape
+from lib.datasets.foggy_cityscape import foggy_cityscape
+from lib.datasets.city_cycle_foggy import city_cycle_foggy
+from lib.datasets.foggy_cycle_city import foggy_cycle_city
 import numpy as np
 
 # Set up cityscape_<>

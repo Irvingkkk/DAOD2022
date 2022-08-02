@@ -1,5 +1,5 @@
 import argparse
-from model.utils.config import cfg, cfg_from_file, cfg_from_list
+from lib.model.utils.config import cfg, cfg_from_file, cfg_from_list
 
 
 def parse_args():
@@ -7,7 +7,16 @@ def parse_args():
     Parse input arguments
     """
     parser = argparse.ArgumentParser(description="Train a Fast R-CNN network")
-    
+    #### for adaptive threshold ###
+    parser.add_argument(
+        "--lambda_thresh",
+        dest="lambda_thresh",
+        help="threshold EMA decay",
+        default=0.999,
+        type=float,
+    )
+    ################################
+
     parser.add_argument(
         "--warmup_use_SWAug",
         dest="warmup_use_SWAug",
@@ -517,7 +526,6 @@ def set_dataset_args(args, test=False):
                 "MAX_NUM_GT_BOXES",
                 "30",
             ]
-
         if args.dataset_t == "water":
             args.imdb_name_target = "water_train"
             args.imdbval_name_target = "water_train"
@@ -571,7 +579,6 @@ def set_dataset_args(args, test=False):
                 "MAX_NUM_GT_BOXES",
                 "20",
             ]
-
         elif args.dataset_t == "foggy_cityscape":
             args.imdb_name_target = "foggy_cityscape_trainval"
             args.imdbval_name_target = "foggy_cityscape_test"

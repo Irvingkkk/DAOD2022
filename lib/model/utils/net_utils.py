@@ -7,14 +7,14 @@ from torch.autograd import Variable,Function
 import numpy as np
 from torch.utils import data
 import torchvision.models as models
-from model.utils.config import cfg
-# from model.roi_crop.functions.roi_crop import RoICropFunction
+from lib.model.utils.config import cfg
+# from lib.model.roi_crop.functions.roi_crop import RoICropFunction
 import cv2
 import pdb
 import random
 from torch.utils.data.sampler import Sampler
-from roi_data_layer.roibatchLoader import roibatchLoader,roibatchLoader_aut
-from roi_data_layer.roidb import combined_roidb
+from lib.roi_data_layer.roibatchLoader import roibatchLoader,roibatchLoader_aut
+from lib.roi_data_layer.roidb import combined_roidb
 
 
 from torch.optim import Optimizer
@@ -52,9 +52,9 @@ class sampler(Sampler):
         self.range = torch.arange(0,batch_size).view(1, batch_size).long()
         self.leftover_flag = False
         self.sequential = sequential
-        if train_size % batch_size:
-          self.leftover = torch.arange(self.num_per_batch*batch_size, train_size).long()
-          self.leftover_flag = True
+        # if train_size % batch_size:
+        #   self.leftover = torch.arange(self.num_per_batch*batch_size, train_size).long()
+        #   self.leftover_flag = True
 
     def __iter__(self):
         if self.sequential:
@@ -67,7 +67,7 @@ class sampler(Sampler):
 
         if self.leftover_flag:
             self.rand_num_view = torch.cat((self.rand_num_view, self.leftover),0)
-
+            # self.rand_num_view = torch.cat((self.rand_num_view, torch.tensor([0])),0) 如果要把余数补上，就要补上0-n前面几个数，不如直接droplast
         return iter(self.rand_num_view)
 
     def __len__(self):
@@ -230,7 +230,7 @@ class FocalLoss(nn.Module):
                 batch_loss = - (torch.pow((1 - probs), self.gamma)) * log_p
         else:
             #inputs = F.sigmoid(inputs)
-            P = F.softmax(inputs)
+            P = F.softmax(inputs,dim=1)
 
             class_mask = inputs.data.new(N, C).fill_(0)
             class_mask = Variable(class_mask)
@@ -397,9 +397,7 @@ def clip_gradient(model, clip_norm):
     """Computes a gradient clipping coefficient based on gradient norm."""
     totalnorm = 0
     for p in model.parameters():
-        if p.requires_grad:
-            if p.grad == None:
-                continue
+        if p.requires_grad and p.grad is not None:
             modulenorm = p.grad.data.norm()
             totalnorm += modulenorm ** 2
     totalnorm = torch.sqrt(totalnorm).item()
@@ -407,9 +405,7 @@ def clip_gradient(model, clip_norm):
     norm = (clip_norm / max(totalnorm, clip_norm))
     #print(norm)
     for p in model.parameters():
-        if p.requires_grad:
-            if p.grad == None:
-                continue
+        if p.requires_grad and p.grad is not None:
             p.grad.mul_(norm)
 
 def vis_detections(im, class_name, dets, thresh=0.8):

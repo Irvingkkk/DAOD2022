@@ -28,7 +28,7 @@ from .voc_eval import voc_eval_oneimg
 
 # TODO: make fast_rcnn irrelevant
 # >>>> obsolete, because it depends on sth outside of this project
-from model.utils.config import cfg
+from lib.model.utils.config import cfg
 from .config_dataset import cfg_d
 
 try:
@@ -357,7 +357,7 @@ class city_cycle_foggy(imdb):
 
     def _do_python_eval_st(self, output_dir='output',ST=False):
         annopath = os.path.join(
-            '/space0/zhaofz/2022/faster-rcnn.pytorch/data/city_cycle_foggy/VOC2007/ST',
+            '/space0/zhaofz/2022/DAOD/data/city_cycle_foggy/VOC2007/ST',
             'Annotations',
             '{:s}.xml')
         imagesetfile = os.path.join(

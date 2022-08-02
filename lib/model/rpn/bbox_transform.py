@@ -85,7 +85,17 @@ def bbox_transform_inv(boxes, deltas, batch_size):
     dw = deltas[:, :, 2::4]
     dh = deltas[:, :, 3::4]
 
-    pred_ctr_x = dx * widths.unsqueeze(2) + ctr_x.unsqueeze(2)
+    # print("dx.shape",dx.shape)
+    # print("widths.shape",widths.shape)
+    # print("widths.unsqueeze(2).shape",widths.unsqueeze(2).shape)
+    # print("ctr_x.shape",ctr_x.shape)
+    try:
+        pred_ctr_x = dx * widths.unsqueeze(2) + ctr_x.unsqueeze(2)
+    except:
+        print("dx.shape",dx.shape)
+        print("widths.shape",widths.shape)
+        print("widths.unsqueeze(2).shape",widths.unsqueeze(2).shape)
+        print("ctr_x.shape",ctr_x.shape)    
     pred_ctr_y = dy * heights.unsqueeze(2) + ctr_y.unsqueeze(2)
     pred_w = torch.exp(dw) * widths.unsqueeze(2)
     pred_h = torch.exp(dh) * heights.unsqueeze(2)
@@ -176,7 +186,6 @@ def bbox_overlaps_batch(anchors, gt_boxes):
 
 
     if anchors.dim() == 2:
-
         N = anchors.size(0)
         K = gt_boxes.size(1)
 

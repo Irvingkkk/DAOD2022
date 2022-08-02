@@ -4,10 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from model.utils.config import cfg
+from lib.model.utils.config import cfg
 from .proposal_layer import _ProposalLayer
 from .anchor_target_layer import _AnchorTargetLayer
-from model.utils.net_utils import _smooth_l1_loss
+from lib.model.utils.net_utils import _smooth_l1_loss
 
 import numpy as np
 import math
@@ -60,7 +60,7 @@ class _RPN(nn.Module):
         batch_size = base_feat.size(0)
 
         # return feature map after convrelu layer
-        rpn_conv1 = F.relu(self.RPN_Conv(base_feat), inplace=True)
+        rpn_conv1 = F.relu(self.RPN_Conv(base_feat), inplace=True) 
         # get rpn classification score
         rpn_cls_score = self.RPN_cls_score(rpn_conv1)
 
@@ -72,6 +72,7 @@ class _RPN(nn.Module):
         rpn_bbox_pred = self.RPN_bbox_pred(rpn_conv1)
 
         # proposal layer
+        # print('here: ',self.training)
         cfg_key = 'TRAIN' if self.training else 'TEST'
 
         rois = self.RPN_proposal((rpn_cls_prob.data, rpn_bbox_pred.data,
@@ -83,9 +84,7 @@ class _RPN(nn.Module):
         # generating training labels and build the rpn loss
         if self.training:
             assert gt_boxes is not None
-
             rpn_data = self.RPN_anchor_target((rpn_cls_score.data, gt_boxes, im_info, num_boxes))
-
             # compute classification loss
             rpn_cls_score = rpn_cls_score_reshape.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2)
             rpn_label = rpn_data[0].view(batch_size, -1)
@@ -106,5 +105,6 @@ class _RPN(nn.Module):
 
             self.rpn_loss_box = _smooth_l1_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights,
                                                             rpn_bbox_outside_weights, sigma=3, dim=[1,2,3])
-
+        else: print('') #print("RPN not training!!")
+        
         return rois, self.rpn_loss_cls, self.rpn_loss_box

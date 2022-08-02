@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import math
 import torchvision.models as models
-from model.aut_faster_rcnn.aut_faster_rcnn_adv import _fasterRCNN
+from lib.model.aut_faster_rcnn.aut_faster_rcnn_adv import _fasterRCNN
 import pdb
 
 def conv3x3(in_planes, out_planes, stride=1):

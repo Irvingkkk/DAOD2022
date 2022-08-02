@@ -27,7 +27,7 @@ from .voc_eval import voc_eval
 
 # TODO: make fast_rcnn irrelevant
 # >>>> obsolete, because it depends on sth outside of this project
-from model.utils.config import cfg
+from lib.model.utils.config import cfg
 from .config_dataset import cfg_d
 from .voc_eval import voc_eval_oneimg
 
@@ -123,16 +123,20 @@ class foggy_cityscape(imdb):
         """
         cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')
         if os.path.exists(cache_file):
-            with open(cache_file, 'rb') as fid:
-                roidb = pickle.load(fid)
-            print('{} gt roidb loaded from {}'.format(self.name, cache_file))
-            return roidb
+            os.remove(cache_file)
+            print('delete outdated cache_file:',cache_file)
+        # if os.path.exists(cache_file):
+        #     with open(cache_file, 'rb') as fid:
+        #         roidb = pickle.load(fid)
+        #     print('{} gt roidb loaded from {}'.format(self.name, cache_file))
+        #     return roidb
 
         gt_roidb = [self._load_pascal_annotation(index)
                     for index in self.image_index]
         with open(cache_file, 'wb') as fid:
             pickle.dump(gt_roidb, fid, pickle.HIGHEST_PROTOCOL)
         print('wrote gt roidb to {}'.format(cache_file))
+
 
         return gt_roidb
 
@@ -370,7 +374,7 @@ class foggy_cityscape(imdb):
 
     def _do_python_eval_st(self, output_dir='output',ST=False):
         annopath = os.path.join(
-            '/space0/zhaofz/2022/faster-rcnn.pytorch/data/foggyCityscape/VOC2007/ST',
+            '/space0/zhaofz/2022/DAOD/data/foggyCityscape/VOC2007/ST',
             'Annotations',
             '{:s}.xml')
         imagesetfile = os.path.join(

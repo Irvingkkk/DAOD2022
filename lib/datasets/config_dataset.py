@@ -46,10 +46,10 @@ __D.CITYSCAPE_CAR_CYCLE_SIM10K = (
     "path_to/dataset/sim10k2city/city_cycle_sim10k_voc_10"
 )
 
-__D.CITYSCAPE = "/space0/zhaofz/2022/faster-rcnn.pytorch/data/Cityscape/VOC2007"
-__D.CITYSCAPE_CYCLE_FOGGY = "/space0/zhaofz/2022/faster-rcnn.pytorch/data/city_cycle_foggy/VOC2007"
-__D.FOGGYCITY = "/space0/zhaofz/2022/faster-rcnn.pytorch/data/foggyCityscape/VOC2007"
-__D.FOGGYCITY_CYCLE_CITY = "/space0/zhaofz/2022/faster-rcnn.pytorch/data/foggy_cycle_city/VOC2007"
+__D.CITYSCAPE = "/space0/zhaofz/2022/DAOD/data/Cityscape/VOC2007"
+__D.CITYSCAPE_CYCLE_FOGGY = "/space0/zhaofz/2022/DAOD/data/city_cycle_foggy/VOC2007"
+__D.FOGGYCITY = "/space0/zhaofz/2022/DAOD/data/foggyCityscape/VOC2007"
+__D.FOGGYCITY_CYCLE_CITY = "/space0/zhaofz/2022/DAOD/data/foggy_cycle_city/VOC2007"
 
 
 def _merge_a_into_b(a, b):
